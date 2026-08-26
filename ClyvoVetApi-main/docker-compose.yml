@@ -1,0 +1,32 @@
+version: '3.9'
+
+services:
+
+  oracle-db:
+    image: gvenzl/oracle-xe
+    container_name: oracle-db
+
+    environment:
+      ORACLE_PASSWORD: 020207
+
+    ports:
+      - "1521:1521"
+
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+
+  api:
+    build: .
+    container_name: clyvovet-api
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      - oracle-db
+
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+
+volumes:
+  oracle_data:
