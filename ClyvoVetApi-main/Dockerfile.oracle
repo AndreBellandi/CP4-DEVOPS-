@@ -1,0 +1,12 @@
+FROM gvenzl/oracle-xe:latest
+
+# Senha do usuário SYS/SYSTEM do Oracle XE
+ENV ORACLE_PASSWORD=SUA_SENHA
+
+# Scripts .sql colocados nesta pasta são executados automaticamente
+# na primeira inicialização do banco (ex: DDL das tabelas do projeto)
+COPY ./init-scripts/ /container-entrypoint-initdb.d/
+
+EXPOSE 1521
+
+VOLUME ["/opt/oracle/oradata"]

@@ -7,7 +7,7 @@ services:
     container_name: oracle-db
 
     environment:
-      ORACLE_PASSWORD: 020207
+      ORACLE_PASSWORD: SUA_SENHA
 
     ports:
       - "1521:1521"
