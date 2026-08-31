@@ -11,16 +11,14 @@ Deploy de uma API .NET + Banco de Dados Oracle como containers na Azure, utiliza
 - Conta ativa no Microsoft Azure
 - Git
 
-## Variáveis do projeto
+## Dados do projeto
 
-Antes de começar, defina as variáveis abaixo no seu terminal. Todos os comandos deste README usam essas variáveis — ajuste apenas aqui.
-
-```bash
-export RM=564662
-export LOCATION=canadacentral         # altere conforme sua política/região
-export RESOURCE_GROUP=rg-clyvovet-$RM
-export ACR_NAME=clyvovet${RM}   # nomes de ACR só aceitam letras/números
-```
+| Item | Valor |
+|---|---|
+| RM | `564662` |
+| Localização | `canadacentral` |
+| Resource Group | `rg-clyvovet-564662` |
+| ACR | `clyvovet564662` |
 
 ## Dockerfiles do projeto
 
@@ -91,8 +89,8 @@ docker network create clyvovet-net
 ### 3. Build das imagens localmente
 
 ```bash
-docker build -f Dockerfile.oracle -t oracle-db-$RM .
-docker build -f Dockerfile.api -t clyvovet-api-$RM .
+docker build -f Dockerfile.oracle -t oracle-db-564662 .
+docker build -f Dockerfile.api -t clyvovet-api-564662 .
 ```
 
 ### 4. Rodar o banco Oracle localmente
@@ -104,7 +102,7 @@ docker run -d \
   -e ORACLE_PASSWORD=020207 \
   -p 1521:1521 \
   -v oracle_data:/opt/oracle/oradata \
-  oracle-db-$RM
+  oracle-db-564662
 ```
 
 Aguarde o banco inicializar (pode levar 1-2 minutos na primeira vez):
@@ -121,7 +119,7 @@ docker run -d \
   --network clyvovet-net \
   -e ASPNETCORE_URLS=http://+:8080 \
   -p 8080:8080 \
-  clyvovet-api-$RM
+  clyvovet-api-564662
 ```
 
 ### 6. Testar localmente
@@ -148,7 +146,7 @@ az account show
 ### 9. Criar o Resource Group
 
 ```bash
-az group create --name $RESOURCE_GROUP --location $LOCATION
+az group create --name rg-clyvovet-564662 --location canadacentral
 ```
 
 Caso ocorra erro de subscription:
@@ -164,10 +162,10 @@ az account set --subscription "<nome ou id da subscription>"
 az provider register --namespace Microsoft.ContainerRegistry
 
 az acr create \
-    --resource-group $RESOURCE_GROUP \
-    --name $ACR_NAME \
+    --resource-group rg-clyvovet-564662 \
+    --name clyvovet564662 \
     --sku Standard \
-    --location $LOCATION \
+    --location canadacentral \
     --public-network-enabled true \
     --admin-enabled true
 ```
@@ -175,18 +173,18 @@ az acr create \
 ### 11. Obter credenciais do ACR
 
 ```bash
-LOGIN_SERVER=$(az acr show --name $ACR_NAME \
-                           --resource-group $RESOURCE_GROUP \
+LOGIN_SERVER=$(az acr show --name clyvovet564662 \
+                           --resource-group rg-clyvovet-564662 \
                            --query loginServer --output tsv)
 echo ""
 echo "Login Server: $LOGIN_SERVER"
 echo ""
 
-ADMIN_USERNAME=$(az acr credential show --name $ACR_NAME \
-                                        --resource-group $RESOURCE_GROUP \
+ADMIN_USERNAME=$(az acr credential show --name clyvovet564662 \
+                                        --resource-group rg-clyvovet-564662 \
                                         --query username --output tsv) && \
-ADMIN_PASSWORD=$(az acr credential show --name $ACR_NAME \
-                                        --resource-group $RESOURCE_GROUP \
+ADMIN_PASSWORD=$(az acr credential show --name clyvovet564662 \
+                                        --resource-group rg-clyvovet-564662 \
                                  --query passwords[0].value --output tsv) && \
 echo "Username: $ADMIN_USERNAME" && echo "Password: $ADMIN_PASSWORD"
 ```
@@ -194,7 +192,7 @@ echo "Username: $ADMIN_USERNAME" && echo "Password: $ADMIN_PASSWORD"
 ### 12. Login no ACR
 
 ```bash
-az acr login --name $ACR_NAME
+az acr login --name clyvovet564662
 ```
 
 ou
@@ -210,52 +208,52 @@ docker login $LOGIN_SERVER \
 ```bash
 docker image ls
 
-docker tag oracle-db-$RM $LOGIN_SERVER/oracle-db-$RM:v1
-docker push $LOGIN_SERVER/oracle-db-$RM:v1
+docker tag oracle-db-564662 $LOGIN_SERVER/oracle-db-564662:v1
+docker push $LOGIN_SERVER/oracle-db-564662:v1
 
-docker tag clyvovet-api-$RM $LOGIN_SERVER/clyvovet-api-$RM:v1
-docker push $LOGIN_SERVER/clyvovet-api-$RM:v1
+docker tag clyvovet-api-564662 $LOGIN_SERVER/clyvovet-api-564662:v1
+docker push $LOGIN_SERVER/clyvovet-api-564662:v1
 ```
 
 ### 14. Conferir imagens registradas no ACR
 
 ```bash
-az acr repository list --name $ACR_NAME --output table
+az acr repository list --name clyvovet564662 --output table
 ```
 
 Comandos úteis adicionais:
 
 ```bash
 # Listar as tags (imagens) de um repositório
-az acr repository show-tags --name $ACR_NAME --repository clyvovet-api-$RM
+az acr repository show-tags --name clyvovet564662 --repository clyvovet-api-564662
 
 # Mostrar manifesto
-az acr manifest list-metadata --registry $ACR_NAME --name clyvovet-api-$RM
+az acr manifest list-metadata --registry clyvovet564662 --name clyvovet-api-564662
 
 # Limpar imagens antigas do ACR
-az acr purge --name $ACR_NAME --filter 'clyvovet-api-'$RM':.*' --ago 7d --untagged
+az acr purge --name clyvovet564662 --filter 'clyvovet-api-564662:.*' --ago 7d --untagged
 
 # Detalhes de um repositório
-az acr repository show --name $ACR_NAME --repository clyvovet-api-$RM
+az acr repository show --name clyvovet564662 --repository clyvovet-api-564662
 
 # Habilitar usuário administrador
-az acr update --name $ACR_NAME --admin-enabled true
+az acr update --name clyvovet564662 --admin-enabled true
 ```
 
 ### 15. (Opcional) Remover imagens locais após o push
 
 ```bash
-docker rmi $LOGIN_SERVER/oracle-db-$RM:v1
-docker rmi $LOGIN_SERVER/clyvovet-api-$RM:v1
+docker rmi $LOGIN_SERVER/oracle-db-564662:v1
+docker rmi $LOGIN_SERVER/clyvovet-api-564662:v1
 ```
 
 ### 16. Deploy do banco Oracle em ACI
 
 ```bash
 az container create \
-  --resource-group $RESOURCE_GROUP \
-  --name oracle-db-$RM \
-  --image $LOGIN_SERVER/oracle-db-$RM:v1 \
+  --resource-group rg-clyvovet-564662 \
+  --name oracle-db-564662 \
+  --image $LOGIN_SERVER/oracle-db-564662:v1 \
   --registry-login-server $LOGIN_SERVER \
   --registry-username $ADMIN_USERNAME \
   --registry-password $ADMIN_PASSWORD \
@@ -272,9 +270,9 @@ az container create \
 Verificação:
 
 ```bash
-az container logs --resource-group $RESOURCE_GROUP --name oracle-db-$RM
+az container logs --resource-group rg-clyvovet-564662 --name oracle-db-564662
 
-FQDN_DB=$(az container show --resource-group $RESOURCE_GROUP --name oracle-db-$RM \
+FQDN_DB=$(az container show --resource-group rg-clyvovet-564662 --name oracle-db-564662 \
   --query ipAddress.fqdn --output tsv)
 ```
 
@@ -282,23 +280,23 @@ FQDN_DB=$(az container show --resource-group $RESOURCE_GROUP --name oracle-db-$R
 
 ```bash
 az container create \
-  --resource-group $RESOURCE_GROUP \
-  --name clyvovet-api-$RM \
-  --image $LOGIN_SERVER/clyvovet-api-$RM:v1 \
+  --resource-group rg-clyvovet-564662 \
+  --name clyvovet-api-564662 \
+  --image $LOGIN_SERVER/clyvovet-api-564662:v1 \
   --registry-login-server $LOGIN_SERVER \
   --registry-username $ADMIN_USERNAME \
   --registry-password $ADMIN_PASSWORD \
   --ports 8080 \
-  --dns-name-label clyvovet-api-$RM \
+  --dns-name-label clyvovet-api-564662 \
   --environment-variables ASPNETCORE_URLS=http://+:8080
 ```
 
 Verificação:
 
 ```bash
-az container logs --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM
+az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662
 
-FQDN_API=$(az container show --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM \
+FQDN_API=$(az container show --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 \
   --query ipAddress.fqdn --output tsv)
 
 curl -X GET http://$FQDN_API:8080/api/transacoes
@@ -346,19 +344,19 @@ curl -X DELETE http://$FQDN_API:8080/api/transacoes/6
 
 ```bash
 # Logs do container
-az container logs --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM
+az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662
 
 # Logs com streaming
-az container logs --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM --follow
+az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --follow
 
 # Sessão interativa
-az container exec --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM --exec-command "/bin/bash"
+az container exec --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --exec-command "/bin/bash"
 
 # Verificar processos
-az container exec --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM --exec-command "ps aux"
+az container exec --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --exec-command "ps aux"
 
 # Deletar um container específico
-az container delete --resource-group $RESOURCE_GROUP --name clyvovet-api-$RM --yes
+az container delete --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --yes
 ```
 
 ### 20. Outros comandos que podem ajudar
@@ -387,7 +385,3 @@ az keyvault purge --subscription {ID_DA_SUBSCRICAO} -n {NOME_DO_VAULT}
 - [ ] Vídeo (mín. 720p, com áudio explicativo) mostrando: recursos criados na Azure (ACR, ACI, Conta de Armazenamento) e evidências de cada operação de CRUD via SELECT no banco
 - [ ] Nenhuma credencial sensível exposta no código-fonte
 - [ ] Folha de rosto com nome do grupo, RM e integrantes, link do GitHub e do vídeo
-
-## Licença / Créditos
-
-Projeto acadêmico — FIAP, Tecnologia em Desenvolvimento de Sistemas, disciplina DevOps Tools & Cloud Computing. Baseado no checkpoint "1º Checkpoint 2º Semestre – Containers em Nuvem (ACR/ACI)" (Prof. João Menk).
