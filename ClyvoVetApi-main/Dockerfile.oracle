@@ -1,7 +1,7 @@
 FROM gvenzl/oracle-xe:latest
 
 # Senha do usuário SYS/SYSTEM do Oracle XE
-ENV ORACLE_PASSWORD=SUA_SENHA
+ENV ORACLE_PASSWORD=020207
 
 # Scripts .sql colocados nesta pasta são executados automaticamente
 # na primeira inicialização do banco (ex: DDL das tabelas do projeto)
