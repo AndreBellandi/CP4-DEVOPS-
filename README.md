@@ -71,29 +71,125 @@ ENTRYPOINT ["dotnet", "ClyvoVetApi.dll"]
 
 > Ajuste a versão do SDK/runtime (`8.0`) para a versão do .NET usada no projeto, e o nome da DLL no `ENTRYPOINT` para o nome real do assembly gerado (geralmente `<NomeDoProjeto>.dll`).
 
-## How To
 
-### 1. Clonar o repositório
+### 1. Login na Azure (na sua máquina Windows)
+
+```powershell
+az login
+az account show
+```
+
+### 2. Criar o Resource Group
+
+```powershell
+az group create --name rg-clyvovet-564662 --location canadacentral
+```
+
+### 3. Criar a VM Linux (Ubuntu)
+
+```powershell
+az vm create `
+  --resource-group rg-clyvovet-564662 `
+  --name vm-clyvovet-564662 `
+  --image Ubuntu2204 `
+  --size Standard_B2s `
+  --admin-username azureuser `
+  --generate-ssh-keys `
+  --public-ip-sku Standard
+```
+
+> `--generate-ssh-keys` cria (ou reaproveita) um par de chaves SSH em `~/.ssh/id_rsa` automaticamente — não precisa de senha.
+
+### 4. Liberar a porta 8080 no Network Security Group (opcional)
+
+Só necessário se você quiser testar a API pelo navegador/Postman direto do seu PC, apontando para a VM:
+
+```powershell
+az vm open-port --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --port 8080
+```
+
+### 5. Pegar o IP público da VM
+
+```powershell
+az vm show -d --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --query publicIps -o tsv
+```
+
+### 6. Conectar via SSH
+
+```powershell
+ssh azureuser@<IP_PUBLICO_DA_VM>
+```
+
+> Daqui em diante, **todos os comandos abaixo rodam dentro da VM**, na sessão SSH.
+
+## Parte 2 — Preparar a VM (instalar Docker e Azure CLI)
+
+### 7. Instalar o Docker Engine
+
+```bash
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Permite rodar docker sem sudo
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+Teste:
+
+```bash
+docker --version
+```
+
+### 8. Instalar o Azure CLI
+
+```bash
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
+
+### 9. Login na Azure (dentro da VM)
+
+Como a VM não tem navegador, use o login por código de dispositivo:
+
+```bash
+az login --use-device-code
+```
+
+Ele mostra um código e um link — abra o link no navegador do seu PC, cole o código e confirme.
+
+## Parte 3 — Build e testes locais (dentro da VM)
+
+### 10. Clonar o repositório
 
 ```bash
 git clone https://github.com/AndreBellandi/CP4-DEVOPS-.git
 cd CP4-DEVOPS-/ClyvoVetApi-main
 ```
 
-### 2. Criar uma rede Docker local
+### 11. Criar uma rede Docker local
 
 ```bash
 docker network create clyvovet-net
 ```
 
-### 3. Build das imagens localmente
+### 12. Build das imagens localmente
 
 ```bash
 docker build -f Dockerfile.oracle -t oracle-db-564662 .
 docker build -f Dockerfile.api -t clyvovet-api-564662 .
 ```
 
-### 4. Rodar o banco Oracle localmente
+### 13. Rodar o banco Oracle localmente
 
 ```bash
 docker run -d \
@@ -111,7 +207,7 @@ Aguarde o banco inicializar (pode levar 1-2 minutos na primeira vez):
 docker logs -f oracle-db
 ```
 
-### 5. Rodar a API localmente
+### 14. Rodar a API localmente
 
 ```bash
 docker run -d \
@@ -122,13 +218,19 @@ docker run -d \
   clyvovet-api-564662
 ```
 
-### 6. Testar localmente
+### 15. Testar localmente (dentro da VM)
 
 ```bash
 curl -X GET http://localhost:8080/api/transacoes
 ```
 
-### 7. Derrubar o ambiente local (quando terminar os testes)
+Se você liberou a porta 8080 no passo 4, também pode testar do seu PC apontando para o IP público da VM:
+
+```powershell
+curl http://<IP_PUBLICO_DA_VM>:8080/api/transacoes
+```
+
+### 16. Derrubar o ambiente local (quando terminar os testes)
 
 ```bash
 docker stop clyvovet-api oracle-db
@@ -136,27 +238,9 @@ docker rm clyvovet-api oracle-db
 docker network rm clyvovet-net
 ```
 
-### 8. Login na Azure
+## Parte 4 — Registrar as imagens no ACR
 
-```bash
-az login
-az account show
-```
-
-### 9. Criar o Resource Group
-
-```bash
-az group create --name rg-clyvovet-564662 --location canadacentral
-```
-
-Caso ocorra erro de subscription:
-
-```bash
-az account list -o table
-az account set --subscription "<nome ou id da subscription>"
-```
-
-### 10. Criar o Azure Container Registry (ACR)
+### 17. Criar o Azure Container Registry (ACR)
 
 ```bash
 az provider register --namespace Microsoft.ContainerRegistry
@@ -170,7 +254,7 @@ az acr create \
     --admin-enabled true
 ```
 
-### 11. Obter credenciais do ACR
+### 18. Obter credenciais do ACR
 
 ```bash
 LOGIN_SERVER=$(az acr show --name clyvovet564662 \
@@ -189,7 +273,7 @@ ADMIN_PASSWORD=$(az acr credential show --name clyvovet564662 \
 echo "Username: $ADMIN_USERNAME" && echo "Password: $ADMIN_PASSWORD"
 ```
 
-### 12. Login no ACR
+### 19. Login no ACR
 
 ```bash
 az acr login --name clyvovet564662
@@ -203,7 +287,7 @@ docker login $LOGIN_SERVER \
   -p $ADMIN_PASSWORD
 ```
 
-### 13. Tag e push das imagens para o ACR
+### 20. Tag e push das imagens para o ACR
 
 ```bash
 docker image ls
@@ -215,7 +299,7 @@ docker tag clyvovet-api-564662 $LOGIN_SERVER/clyvovet-api-564662:v1
 docker push $LOGIN_SERVER/clyvovet-api-564662:v1
 ```
 
-### 14. Conferir imagens registradas no ACR
+### 21. Conferir imagens registradas no ACR
 
 ```bash
 az acr repository list --name clyvovet564662 --output table
@@ -240,14 +324,16 @@ az acr repository show --name clyvovet564662 --repository clyvovet-api-564662
 az acr update --name clyvovet564662 --admin-enabled true
 ```
 
-### 15. (Opcional) Remover imagens locais após o push
+### 22. (Opcional) Remover imagens locais após o push
 
 ```bash
 docker rmi $LOGIN_SERVER/oracle-db-564662:v1
 docker rmi $LOGIN_SERVER/clyvovet-api-564662:v1
 ```
 
-### 16. Deploy do banco Oracle em ACI
+## Parte 5 — Deploy em Azure Container Instances (ACI)
+
+### 23. Deploy do banco Oracle em ACI
 
 ```bash
 az container create \
@@ -276,7 +362,7 @@ FQDN_DB=$(az container show --resource-group rg-clyvovet-564662 --name oracle-db
   --query ipAddress.fqdn --output tsv)
 ```
 
-### 17. Deploy da API .NET em ACI
+### 24. Deploy da API .NET em ACI
 
 ```bash
 az container create \
@@ -302,7 +388,7 @@ FQDN_API=$(az container show --resource-group rg-clyvovet-564662 --name clyvovet
 curl -X GET http://$FQDN_API:8080/api/transacoes
 ```
 
-### 18. Testes de CRUD em nuvem
+### 25. Testes de CRUD em nuvem
 
 **POST**
 
@@ -340,7 +426,7 @@ curl -X PUT http://$FQDN_API:8080/api/transacoes/6 \
 curl -X DELETE http://$FQDN_API:8080/api/transacoes/6
 ```
 
-### 19. Comandos úteis de operação/troubleshooting
+### 26. Comandos úteis de operação/troubleshooting
 
 ```bash
 # Logs do container
@@ -359,7 +445,7 @@ az container exec --resource-group rg-clyvovet-564662 --name clyvovet-api-564662
 az container delete --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --yes
 ```
 
-### 20. Outros comandos que podem ajudar
+### 27. Outros comandos que podem ajudar
 
 ```bash
 # Informações sobre sua conta
@@ -370,6 +456,16 @@ az keyvault list-deleted --subscription {ID_DA_SUBSCRICAO} --resource-type vault
 
 # Purgar (deletar permanentemente) um Key Vault — demora
 az keyvault purge --subscription {ID_DA_SUBSCRICAO} -n {NOME_DO_VAULT}
+```
+
+### 28. (Opcional) Apagar a VM depois de terminar
+
+A VM só serviu como ambiente de build/push — depois que as imagens estão no ACR e os ACIs estão rodando, ela não precisa mais existir (e continua sendo cobrada enquanto ligada):
+
+```powershell
+az vm deallocate --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662
+# ou, para apagar de vez:
+az vm delete --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --yes
 ```
 
 ## Checklist de entrega
