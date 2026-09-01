@@ -432,16 +432,3 @@ az keyvault purge --subscription "{ID_DA_SUBSCRICAO}" -n kvclyvovet564662
 
 ---
 
-## Checklist de entrega
-
-- [ ] Recursos criados via Azure CLI (scripts `01_store-account.ps1`, `02_key-vault.ps1`, `03_aci-oracledb.ps1`, `04_aci-clyvovetapi.ps1` versionados no GitHub)
-- [ ] `Dockerfile.oracle`, `Dockerfile.api` versionados no GitHub
-- [ ] Container do App (`clyvovetapi-564662`) **sem** privilégios de root/admin (garantido pelo `USER app` no `Dockerfile.api`)
-- [ ] Comandos completos de `docker build` e `docker push` documentados
-- [ ] Banco de dados relacional (Oracle) containerizado com Dockerfile próprio (H2 **não** é aceito)
-- [ ] Dados do banco persistidos em Conta de Armazenamento (`stclyvovet564662`)
-- [ ] Script DDL das tabelas versionado no GitHub (pode ficar em `init-scripts/` do `Dockerfile.oracle`)
-- [ ] Arquivos JSON de teste (GET/POST/PUT/DELETE) versionados no GitHub
-- [ ] Vídeo (mín. 720p, com áudio explicativo) mostrando: recursos criados na Azure (ACR, ACI, Storage Account, Key Vault) e evidências de cada operação de CRUD via SELECT no banco
-- [ ] Nenhuma credencial sensível exposta no código-fonte (uso do Key Vault)
-- [ ] Folha de rosto com nome do grupo, RM e integrantes, link do GitHub e do vídeo
