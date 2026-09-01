@@ -119,6 +119,7 @@ docker network create clyvovet-net
 ### 5. Build das imagens localmente
 
 ```bash
+cd .\ClyvoVetApi-main\
 docker build -f Dockerfile.oracle -t oracledb-564662 .
 docker build -f Dockerfile.api -t clyvovetapi-564662 .
 ```
@@ -174,7 +175,6 @@ docker login $LOGIN_SERVER \
   -p $ADMIN_PASSWORD
 ```
 
-> Como visto na Aula 12, também é possível logar sem o Docker instalado, usando `az acr login --name clyvovet564662 --expose-token` e repassando o token via `docker login ... --password-stdin`.
 
 ### 13. Tag e push das imagens para o ACR
 
@@ -224,163 +224,131 @@ docker rmi $LOGIN_SERVER/clyvovetapi-564662:v1
 
 ## Parte 4 — Criar os recursos de suporte em nuvem
 
+Assim como na Aula 12, precisamos recriar em nuvem os recursos que localmente eram resolvidos com rede Docker, volume nomeado e variáveis de ambiente:
 
-### 16. Script `01_store-account.sh` — Conta de Armazenamento
+- Localmente usamos uma **rede Docker**; em nuvem os containers se comunicam pelo **IP Público / FQDN**.
+- Localmente usamos um **volume nomeado** para persistir os dados do Oracle; em nuvem vamos criar uma **Conta de Armazenamento**.
+- Localmente usamos **variáveis de ambiente**; em nuvem vamos usar o **Azure Key Vault** para os dados sensíveis (senha do Oracle e credenciais do ACR).
 
-```bash
-#!/bin/bash
-set -e
+### 16. Script `01_store-account.ps1` — Conta de Armazenamento
 
-RESOURCE_GROUP="rg-clyvovet-564662"
-LOCATION="canadacentral"
-STORAGE_ACCOUNT="stclyvovet564662"
-FILE_SHARE="oracle-data"
+```powershell
+$RESOURCE_GROUP = "rg-clyvovet-564662"
+$LOCATION = "canadacentral"
+$STORAGE_ACCOUNT = "stclyvovet564662"
+$FILE_SHARE = "oracle-data"
 
-az storage account create \
-  --resource-group $RESOURCE_GROUP \
-  --name $STORAGE_ACCOUNT \
-  --location $LOCATION \
-  --sku Standard_LRS
+az storage account create --resource-group $RESOURCE_GROUP --name $STORAGE_ACCOUNT --location $LOCATION --sku Standard_LRS
 
-STORAGE_KEY=$(az storage account keys list \
-  --resource-group $RESOURCE_GROUP \
-  --account-name $STORAGE_ACCOUNT \
-  --query "[0].value" --output tsv)
+$STORAGE_KEY = az storage account keys list --resource-group $RESOURCE_GROUP --account-name $STORAGE_ACCOUNT --query "[0].value" --output tsv
 
-az storage share create \
-  --name $FILE_SHARE \
-  --account-name $STORAGE_ACCOUNT \
-  --account-key $STORAGE_KEY
+az storage share create --name $FILE_SHARE --account-name $STORAGE_ACCOUNT --account-key $STORAGE_KEY
 
-echo ""
-echo "Storage Account: $STORAGE_ACCOUNT"
-echo "File Share: $FILE_SHARE"
-echo "Storage Key: $STORAGE_KEY"
-echo ""
+Write-Host "Storage Account: $STORAGE_ACCOUNT"
+Write-Host "File Share: $FILE_SHARE"
+Write-Host "Storage Key: $STORAGE_KEY"
 ```
 
-```bash
-chmod +x 01_store-account.sh
-./01_store-account.sh > 01_store-account.log
+Salve o conteúdo acima em `01_store-account.ps1` e execute:
+
+```powershell
+.\01_store-account.ps1 | Tee-Object -FilePath 01_store-account.log
 ```
 
-### 17. Script `02_key-vault.sh` — Key Vault
+### 17. Script `02_key-vault.ps1` — Key Vault
 
-```bash
-#!/bin/bash
-set -e
+```powershell
+$RESOURCE_GROUP = "rg-clyvovet-564662"
+$LOCATION = "canadacentral"
+$KEY_VAULT = "kvclyvovet564662"
 
-RESOURCE_GROUP="rg-clyvovet-564662"
-LOCATION="canadacentral"
-KEY_VAULT="kvclyvovet564662"
+az keyvault create --resource-group $RESOURCE_GROUP --name $KEY_VAULT --location $LOCATION
 
-az keyvault create \
-  --resource-group $RESOURCE_GROUP \
-  --name $KEY_VAULT \
-  --location $LOCATION
+# O Key Vault é criado por padrão com autorização via RBAC (não mais via Access Policy).
+# Isso significa que, mesmo sendo o criador do vault, seu usuário ainda NÃO tem permissão
+# para ler/gravar segredos até que uma role seja atribuída explicitamente.
+# Vamos conceder a role "Key Vault Secrets Officer" para o usuário atualmente logado no az login.
+
+$VAULT_ID = az keyvault show --name $KEY_VAULT --resource-group $RESOURCE_GROUP --query id --output tsv
+$SIGNED_IN_USER = az ad signed-in-user show --query id --output tsv
+
+az role assignment create --assignee $SIGNED_IN_USER --role "Key Vault Secrets Officer" --scope $VAULT_ID
+
+# A propagação da role pode levar de alguns segundos até 1-2 minutos.
+Write-Host "Aguardando propagação da role RBAC..."
+Start-Sleep -Seconds 60
 
 az keyvault secret set --vault-name $KEY_VAULT --name "oracle-password" --value "020207"
-az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-name" --value "stclyvovet564662"
-az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-key" --value "$STORAGE_KEY"
-az keyvault secret set --vault-name $KEY_VAULT --name "acr-username" --value "$ADMIN_USERNAME"
-az keyvault secret set --vault-name $KEY_VAULT --name "acr-password" --value "$ADMIN_PASSWORD"
+az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-name" --value $STORAGE_ACCOUNT
+az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-key" --value $STORAGE_KEY
+az keyvault secret set --vault-name $KEY_VAULT --name "acr-username" --value $ADMIN_USERNAME
+az keyvault secret set --vault-name $KEY_VAULT --name "acr-password" --value $ADMIN_PASSWORD
 
-echo ""
-echo "Key Vault: $KEY_VAULT criado e segredos armazenados"
-echo ""
+Write-Host "Key Vault: $KEY_VAULT criado e segredos armazenados"
 ```
 
-```bash
-chmod +x 02_key-vault.sh
-./02_key-vault.sh > 02_key-vault.log
+Salve o conteúdo acima em `02_key-vault.ps1` e execute:
+
+```powershell
+.\02_key-vault.ps1 | Tee-Object -FilePath 02_key-vault.log
 ```
 
-> Verifique a Conta de Armazenamento e o Key Vault criados no Portal do Azure.
+> **Erro `(Forbidden) ... ForbiddenByRbac`:** significa exatamente a falta dessa role assignment. Se você já criou o vault sem a role e recebeu esse erro, não precisa recriar o Key Vault — basta rodar os dois comandos de `az keyvault show` / `az ad signed-in-user show` / `az role assignment create` acima, aguardar a propagação e repetir os `az keyvault secret set`.
+>
+> Alternativa (não recomendada para produção, mas útil para não perder tempo com propagação de RBAC): criar o vault com `--enable-rbac-authorization false` no `az keyvault create` para usar o modelo antigo de **Access Policy**, e então rodar `az keyvault set-policy --name $KEY_VAULT --upn <seu-email> --secret-permissions get list set delete` antes do `az keyvault secret set`.
+>
+> Verifique a Conta de Armazenamento, o Key Vault e a atribuição de role (aba **Controle de acesso (IAM)** do vault) criados no Portal do Azure.
 
 ---
 
 ## Parte 5 — Deploy em Azure Container Instances (ACI)
 
-### 18. Script `03_aci-oracledb.sh` — ACI do banco Oracle
+### 18. Script `03_aci-oracledb.ps1` — ACI do banco Oracle
 
-```bash
-#!/bin/bash
-set -e
+```powershell
+$RESOURCE_GROUP = "rg-clyvovet-564662"
+$LOGIN_SERVER = "clyvovet564662.azurecr.io"
 
-RESOURCE_GROUP="rg-clyvovet-564662"
-LOGIN_SERVER="clyvovet564662.azurecr.io"
+az container create --resource-group $RESOURCE_GROUP --name oracledb-564662 --image "$LOGIN_SERVER/oracledb-564662:v1" --os-type Linux --registry-login-server $LOGIN_SERVER --registry-username $ADMIN_USERNAME --registry-password $ADMIN_PASSWORD --ports 1521 --cpu 2 --memory 4 --environment-variables ORACLE_PASSWORD=020207 --azure-file-volume-account-name $STORAGE_ACCOUNT --azure-file-volume-account-key $STORAGE_KEY --azure-file-volume-share-name oracle-data --azure-file-volume-mount-path /opt/oracle/oradata
 
-az container create \
-  --resource-group $RESOURCE_GROUP \
-  --name oracledb-564662 \
-  --image $LOGIN_SERVER/oracledb-564662:v1 \
-  --registry-login-server $LOGIN_SERVER \
-  --registry-username $ADMIN_USERNAME \
-  --registry-password $ADMIN_PASSWORD \
-  --ports 1521 \
-  --cpu 2 \
-  --memory 4 \
-  --environment-variables ORACLE_PASSWORD=020207 \
-  --azure-file-volume-account-name $STORAGE_ACCOUNT \
-  --azure-file-volume-account-key $STORAGE_KEY \
-  --azure-file-volume-share-name oracle-data \
-  --azure-file-volume-mount-path /opt/oracle/oradata
-
-echo "Aguardando o container do Oracle iniciar..."
+Write-Host "Aguardando o container do Oracle iniciar..."
 az container logs --resource-group $RESOURCE_GROUP --name oracledb-564662
 
-FQDN_DB=$(az container show --resource-group $RESOURCE_GROUP --name oracledb-564662 \
-  --query ipAddress.ip --output tsv)
-
-echo ""
-echo "IP do oracledb-564662: $FQDN_DB"
-echo ""
+$FQDN_DB = az container show --resource-group $RESOURCE_GROUP --name oracledb-564662 --query ipAddress.ip --output tsv
+Write-Host "IP do oracledb-564662: $FQDN_DB"
 ```
 
-```bash
-chmod +x 03_aci-oracledb.sh
-./03_aci-oracledb.sh > 03_aci-oracledb.log
+Salve o conteúdo acima em `03_aci-oracledb.ps1` e execute:
+
+```powershell
+.\03_aci-oracledb.ps1 | Tee-Object -FilePath 03_aci-oracledb.log
 ```
 
-> O volume `--azure-file-volume-*` persiste os dados do banco em uma Conta de Armazenamento, conforme exigido no checkpoint.
+> O parâmetro `--azure-file-volume-*` persiste os dados do banco em uma Conta de Armazenamento, conforme exigido no checkpoint.
+>
+> **Erro `(InvalidOsType) The 'osType' for container group '<null>' is invalid`:** é um bug conhecido do Azure CLI — ao combinar `--azure-file-volume-*` com outros parâmetros, o `az container create` às vezes não detecta o `osType` sozinho a partir da imagem. A correção é declarar **`--os-type Linux`** explicitamente no comando, como já está no script acima. Se você rodou o comando antes dessa correção e ele falhou, não sobrou nenhum container group criado (o erro é de validação, antes de provisionar) — basta rodar o script novamente com `--os-type Linux`.
 
-### 19. Script `04_aci-clyvovetapi.sh` — ACI da API .NET
+### 19. Script `04_aci-clyvovetapi.ps1` — ACI da API .NET
 
-```bash
-#!/bin/bash
-set -e
+```powershell
+$RESOURCE_GROUP = "rg-clyvovet-564662"
+$LOGIN_SERVER = "clyvovet564662.azurecr.io"
 
-RESOURCE_GROUP="rg-clyvovet-564662"
-LOGIN_SERVER="clyvovet564662.azurecr.io"
+az container create --resource-group $RESOURCE_GROUP --name clyvovetapi-564662 --image "$LOGIN_SERVER/clyvovetapi-564662:v1" --os-type Linux --cpu 1 --memory 1.5 --registry-login-server $LOGIN_SERVER --registry-username $ADMIN_USERNAME --registry-password $ADMIN_PASSWORD --ports 8080 --dns-name-label clyvovetapi-564662 --environment-variables ASPNETCORE_URLS=http://+:8080 --secure-environment-variables "ORACLE_CONNECTION_STRING=Data Source=$FQDN_DB:1521/XEPDB1;User Id=system;Password=020207;"
 
-az container create \
-  --resource-group $RESOURCE_GROUP \
-  --name clyvovetapi-564662 \
-  --image $LOGIN_SERVER/clyvovetapi-564662:v1 \
-  --registry-login-server $LOGIN_SERVER \
-  --registry-username $ADMIN_USERNAME \
-  --registry-password $ADMIN_PASSWORD \
-  --ports 8080 \
-  --dns-name-label clyvovetapi-564662 \
-  --environment-variables ASPNETCORE_URLS=http://+:8080 \
-  --secure-environment-variables ORACLE_CONNECTION_STRING="Data Source=$FQDN_DB:1521/XEPDB1;User Id=system;Password=020207;"
-
-echo "Aguardando o container da API iniciar..."
+Write-Host "Aguardando o container da API iniciar..."
 az container logs --resource-group $RESOURCE_GROUP --name clyvovetapi-564662
 
-FQDN_API=$(az container show --resource-group $RESOURCE_GROUP --name clyvovetapi-564662 \
-  --query ipAddress.fqdn --output tsv)
+$FQDN_API = az container show --resource-group $RESOURCE_GROUP --name clyvovetapi-564662 --query ipAddress.fqdn --output tsv
+Write-Host "FQDN da clyvovetapi-564662: $FQDN_API"
 
-echo ""
-echo "FQDN da clyvovetapi-564662: $FQDN_API"
-echo ""
-
-curl -X GET http://$FQDN_API:8080/api/transacoes
+curl.exe -X GET "http://${FQDN_API}:8080/api/transacoes"
 ```
 
-```bash
-chmod +x 04_aci-clyvovetapi.sh
-./04_aci-clyvovetapi.sh > 04_aci-clyvovetapi.log
+Salve o conteúdo acima em `04_aci-clyvovetapi.ps1` e execute:
+
+```powershell
+.\04_aci-clyvovetapi.ps1 | Tee-Object -FilePath 04_aci-clyvovetapi.log
 ```
 
 > Verifique os dois ACIs criados no Portal do Azure junto com o Resource Group `rg-clyvovet-564662`.
@@ -391,47 +359,40 @@ chmod +x 04_aci-clyvovetapi.sh
 
 **POST**
 
-```bash
-curl -X POST http://$FQDN_API:8080/api/transacoes \
-  -H "Content-Type: application/json" \
-  -d '{
-    "descricao": "Compra no supermercado",
-    "valor": 150.75
-  }'
+```powershell
+curl.exe -X POST "http://${FQDN_API}:8080/api/transacoes" -H "Content-Type: application/json" -d '{\"descricao\": \"Compra no supermercado\", \"valor\": 150.75}'
 ```
 
 **GET**
 
-```bash
-curl -X GET http://$FQDN_API:8080/api/transacoes
+```powershell
+curl.exe -X GET "http://${FQDN_API}:8080/api/transacoes"
 ```
 
 **PUT**
 
-```bash
-curl -X PUT http://$FQDN_API:8080/api/transacoes/6 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "id": 6,
-    "descricao": "Compra no supermercado - ALTERADO",
-    "valor": 150.76,
-    "dataTransacao": "2024-06-18T00:00:00"
-  }'
+```powershell
+curl.exe -X PUT "http://${FQDN_API}:8080/api/transacoes/6" -H "Content-Type: application/json" -d '{\"id\": 6, \"descricao\": \"Compra no supermercado - ALTERADO\", \"valor\": 150.76, \"dataTransacao\": \"2024-06-18T00:00:00\"}'
 ```
 
 **DELETE**
 
-```bash
-curl -X DELETE http://$FQDN_API:8080/api/transacoes/6
+```powershell
+curl.exe -X DELETE "http://${FQDN_API}:8080/api/transacoes/6"
 ```
+
+> No PowerShell, aspas duplas dentro do JSON do `-d` precisam de escape com `\"`, como acima. Se preferir evitar esse problema, use o Git Bash para os comandos `curl` (nesse caso, volte a usar aspas simples sem escape).
 
 ### 20. Conferir a persistência direto no Oracle
 
-```bash
+```powershell
 az container exec --resource-group rg-clyvovet-564662 --name oracledb-564662 --exec-command "/bin/bash"
+```
 
+Dentro do container:
+
+```bash
 sqlplus system/020207@localhost:1521/XEPDB1
-
 SELECT * FROM transacoes;
 ```
 
@@ -439,7 +400,7 @@ SELECT * FROM transacoes;
 
 ## Comandos úteis de operação/troubleshooting
 
-```bash
+```powershell
 # Logs do container
 az container logs --resource-group rg-clyvovet-564662 --name clyvovetapi-564662
 
@@ -458,22 +419,22 @@ az container delete --resource-group rg-clyvovet-564662 --name clyvovetapi-56466
 
 ### Outros comandos que podem ajudar
 
-```bash
+```powershell
 # Informações sobre sua conta
 az account show
 
 # Listar Key Vaults deletados (soft-deleted)
-az keyvault list-deleted --subscription {ID_DA_SUBSCRICAO} --resource-type vault -o table
+az keyvault list-deleted --subscription "{ID_DA_SUBSCRICAO}" --resource-type vault -o table
 
 # Purgar (deletar permanentemente) um Key Vault — demora
-az keyvault purge --subscription {ID_DA_SUBSCRICAO} -n kvclyvovet564662
+az keyvault purge --subscription "{ID_DA_SUBSCRICAO}" -n kvclyvovet564662
 ```
 
 ---
 
 ## Checklist de entrega
 
-- [ ] Recursos criados via Azure CLI (scripts `01_store-account.sh`, `02_key-vault.sh`, `03_aci-oracledb.sh`, `04_aci-clyvovetapi.sh` versionados no GitHub)
+- [ ] Recursos criados via Azure CLI (scripts `01_store-account.ps1`, `02_key-vault.ps1`, `03_aci-oracledb.ps1`, `04_aci-clyvovetapi.ps1` versionados no GitHub)
 - [ ] `Dockerfile.oracle`, `Dockerfile.api` versionados no GitHub
 - [ ] Container do App (`clyvovetapi-564662`) **sem** privilégios de root/admin (garantido pelo `USER app` no `Dockerfile.api`)
 - [ ] Comandos completos de `docker build` e `docker push` documentados
