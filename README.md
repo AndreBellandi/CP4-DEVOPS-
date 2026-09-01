@@ -1,13 +1,13 @@
-# CP4-DEVOPS- — ClyvoVet
+# CP4-DEVOPS — ClyvoVet
 
 Checkpoint 2º Semestre — Containers em Nuvem (ACR/ACI)
 
-Deploy de uma API .NET + Banco de Dados Oracle como containers na Azure, utilizando **Docker** (build/run separados, sem Compose) para build e testes locais, e **Azure Container Registry (ACR)** + **Azure Container Instances (ACI)** para o registro e execução em nuvem.
+Deploy de uma API .NET + Banco de Dados Oracle como containers na Azure, utilizando **Docker** (build/run separados, sem Compose) para build e testes locais, e **Azure Container Registry (ACR)** + **Azure Container Instances (ACI)** para o registro e execução em nuvem — seguindo o passo a passo apresentado na Aula 12 (ACR/ACI).
 
 ## Pré-requisitos
 
-- Docker instalado e em execução
-- Azure CLI instalada (`az`)
+- Docker instalado e em execução na sua máquina
+- Azure CLI instalada (`az`) na sua máquina
 - Conta ativa no Microsoft Azure
 - Git
 
@@ -19,6 +19,10 @@ Deploy de uma API .NET + Banco de Dados Oracle como containers na Azure, utiliza
 | Localização | `canadacentral` |
 | Resource Group | `rg-clyvovet-564662` |
 | ACR | `clyvovet564662` |
+| Storage Account | `stclyvovet564662` |
+| Key Vault | `kvclyvovet564662` |
+| Container (Banco) | `oracledb-564662` |
+| Container (API) | `clyvovetapi-564662` |
 
 ## Dockerfiles do projeto
 
@@ -69,178 +73,61 @@ USER app
 ENTRYPOINT ["dotnet", "ClyvoVetApi.dll"]
 ```
 
-> Ajuste a versão do SDK/runtime (`8.0`) para a versão do .NET usada no projeto, e o nome da DLL no `ENTRYPOINT` para o nome real do assembly gerado (geralmente `<NomeDoProjeto>.dll`).
+> Ajuste a versão do SDK/runtime (`9.0`) para a versão do .NET usada no projeto, e o nome da DLL no `ENTRYPOINT` para o nome real do assembly gerado (geralmente `<NomeDoProjeto>.dll`).
 
+---
 
-### 1. Login na Azure (na sua máquina Windows)
+## Parte 1 — Login na Azure e criação do Resource Group
 
-```powershell
+### 1. Login na Azure
+
+```bash
 az login
 az account show
 ```
 
+Se necessário, selecione a assinatura correta:
+
+```bash
+az account list -o table
+az account set --subscription "<nome ou id>"
+```
+
 ### 2. Criar o Resource Group
 
-```powershell
+```bash
 az group create --name rg-clyvovet-564662 --location canadacentral
 ```
 
-### 3. Criar a VM Linux (Ubuntu)
+---
 
-```powershell
-az vm create `
-  --resource-group rg-clyvovet-564662 `
-  --name vm-clyvovet-564662 `
-  --image Ubuntu2204 `
-  --size Standard_B2s `
-  --admin-username azureuser `
-  --generate-ssh-keys `
-  --public-ip-sku Standard
-```
+## Parte 2 — Build e testes locais
 
-> `--generate-ssh-keys` cria (ou reaproveita) um par de chaves SSH em `~/.ssh/id_rsa` automaticamente — não precisa de senha.
-
-### 4. Liberar a porta 8080 no Network Security Group (opcional)
-
-Só necessário se você quiser testar a API pelo navegador/Postman direto do seu PC, apontando para a VM:
-
-```powershell
-az vm open-port --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --port 8080
-```
-
-### 5. Pegar o IP público da VM
-
-```powershell
-az vm show -d --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --query publicIps -o tsv
-```
-
-### 6. Conectar via SSH
-
-```powershell
-ssh azureuser@<IP_PUBLICO_DA_VM>
-```
-
-> Daqui em diante, **todos os comandos abaixo rodam dentro da VM**, na sessão SSH.
-
-## Parte 2 — Preparar a VM (instalar Docker e Azure CLI)
-
-### 7. Instalar o Docker Engine
-
-```bash
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-sudo chmod a+r /etc/apt/keyrings/docker.gpg
-
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Permite rodar docker sem sudo
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-Teste:
-
-```bash
-docker --version
-```
-
-### 8. Instalar o Azure CLI
-
-```bash
-curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
-```
-
-### 9. Login na Azure (dentro da VM)
-
-Como a VM não tem navegador, use o login por código de dispositivo:
-
-```bash
-az login --use-device-code
-```
-
-Ele mostra um código e um link — abra o link no navegador do seu PC, cole o código e confirme.
-
-## Parte 3 — Build e testes locais (dentro da VM)
-
-### 10. Clonar o repositório
+### 3. Clonar o repositório
 
 ```bash
 git clone https://github.com/AndreBellandi/CP4-DEVOPS-.git
 cd CP4-DEVOPS-/ClyvoVetApi-main
 ```
 
-### 11. Criar uma rede Docker local
+### 4. Criar uma rede Docker local
 
 ```bash
 docker network create clyvovet-net
 ```
 
-### 12. Build das imagens localmente
+### 5. Build das imagens localmente
 
 ```bash
-docker build -f Dockerfile.oracle -t oracle-db-564662 .
-docker build -f Dockerfile.api -t clyvovet-api-564662 .
+docker build -f Dockerfile.oracle -t oracledb-564662 .
+docker build -f Dockerfile.api -t clyvovetapi-564662 .
 ```
 
-### 13. Rodar o banco Oracle localmente
+---
 
-```bash
-docker run -d \
-  --name oracle-db \
-  --network clyvovet-net \
-  -e ORACLE_PASSWORD=020207 \
-  -p 1521:1521 \
-  -v oracle_data:/opt/oracle/oradata \
-  oracle-db-564662
-```
+## Parte 3 — Registrar as imagens no ACR
 
-Aguarde o banco inicializar (pode levar 1-2 minutos na primeira vez):
-
-```bash
-docker logs -f oracle-db
-```
-
-### 14. Rodar a API localmente
-
-```bash
-docker run -d \
-  --name clyvovet-api \
-  --network clyvovet-net \
-  -e ASPNETCORE_URLS=http://+:8080 \
-  -p 8080:8080 \
-  clyvovet-api-564662
-```
-
-### 15. Testar localmente (dentro da VM)
-
-```bash
-curl -X GET http://localhost:8080/api/transacoes
-```
-
-Se você liberou a porta 8080 no passo 4, também pode testar do seu PC apontando para o IP público da VM:
-
-```powershell
-curl http://<IP_PUBLICO_DA_VM>:8080/api/transacoes
-```
-
-### 16. Derrubar o ambiente local (quando terminar os testes)
-
-```bash
-docker stop clyvovet-api oracle-db
-docker rm clyvovet-api oracle-db
-docker network rm clyvovet-net
-```
-
-## Parte 4 — Registrar as imagens no ACR
-
-### 17. Criar o Azure Container Registry (ACR)
+### 10. Registrar o provider e criar o Azure Container Registry (ACR)
 
 ```bash
 az provider register --namespace Microsoft.ContainerRegistry
@@ -254,7 +141,7 @@ az acr create \
     --admin-enabled true
 ```
 
-### 18. Obter credenciais do ACR
+### 11. Obter credenciais do ACR
 
 ```bash
 LOGIN_SERVER=$(az acr show --name clyvovet564662 \
@@ -273,7 +160,7 @@ ADMIN_PASSWORD=$(az acr credential show --name clyvovet564662 \
 echo "Username: $ADMIN_USERNAME" && echo "Password: $ADMIN_PASSWORD"
 ```
 
-### 19. Login no ACR
+### 12. Login no ACR
 
 ```bash
 az acr login --name clyvovet564662
@@ -287,19 +174,21 @@ docker login $LOGIN_SERVER \
   -p $ADMIN_PASSWORD
 ```
 
-### 20. Tag e push das imagens para o ACR
+> Como visto na Aula 12, também é possível logar sem o Docker instalado, usando `az acr login --name clyvovet564662 --expose-token` e repassando o token via `docker login ... --password-stdin`.
+
+### 13. Tag e push das imagens para o ACR
 
 ```bash
 docker image ls
 
-docker tag oracle-db-564662 $LOGIN_SERVER/oracle-db-564662:v1
-docker push $LOGIN_SERVER/oracle-db-564662:v1
+docker tag oracledb-564662 $LOGIN_SERVER/oracledb-564662:v1
+docker push $LOGIN_SERVER/oracledb-564662:v1
 
-docker tag clyvovet-api-564662 $LOGIN_SERVER/clyvovet-api-564662:v1
-docker push $LOGIN_SERVER/clyvovet-api-564662:v1
+docker tag clyvovetapi-564662 $LOGIN_SERVER/clyvovetapi-564662:v1
+docker push $LOGIN_SERVER/clyvovetapi-564662:v1
 ```
 
-### 21. Conferir imagens registradas no ACR
+### 14. Conferir imagens registradas no ACR
 
 ```bash
 az acr repository list --name clyvovet564662 --output table
@@ -309,86 +198,196 @@ Comandos úteis adicionais:
 
 ```bash
 # Listar as tags (imagens) de um repositório
-az acr repository show-tags --name clyvovet564662 --repository clyvovet-api-564662
+az acr repository show-tags --name clyvovet564662 --repository clyvovetapi-564662
 
 # Mostrar manifesto
-az acr manifest list-metadata --registry clyvovet564662 --name clyvovet-api-564662
+az acr manifest list-metadata --registry clyvovet564662 --name clyvovetapi-564662
 
 # Limpar imagens antigas do ACR
-az acr purge --name clyvovet564662 --filter 'clyvovet-api-564662:.*' --ago 7d --untagged
+az acr purge --name clyvovet564662 --filter 'clyvovetapi-564662:.*' --ago 7d --untagged
 
 # Detalhes de um repositório
-az acr repository show --name clyvovet564662 --repository clyvovet-api-564662
+az acr repository show --name clyvovet564662 --repository oracledb-564662
 
 # Habilitar usuário administrador
 az acr update --name clyvovet564662 --admin-enabled true
 ```
 
-### 22. (Opcional) Remover imagens locais após o push
+### 15. (Opcional) Remover imagens locais após o push
 
 ```bash
-docker rmi $LOGIN_SERVER/oracle-db-564662:v1
-docker rmi $LOGIN_SERVER/clyvovet-api-564662:v1
+docker rmi $LOGIN_SERVER/oracledb-564662:v1
+docker rmi $LOGIN_SERVER/clyvovetapi-564662:v1
 ```
+
+---
+
+## Parte 4 — Criar os recursos de suporte em nuvem
+
+
+### 16. Script `01_store-account.sh` — Conta de Armazenamento
+
+```bash
+#!/bin/bash
+set -e
+
+RESOURCE_GROUP="rg-clyvovet-564662"
+LOCATION="canadacentral"
+STORAGE_ACCOUNT="stclyvovet564662"
+FILE_SHARE="oracle-data"
+
+az storage account create \
+  --resource-group $RESOURCE_GROUP \
+  --name $STORAGE_ACCOUNT \
+  --location $LOCATION \
+  --sku Standard_LRS
+
+STORAGE_KEY=$(az storage account keys list \
+  --resource-group $RESOURCE_GROUP \
+  --account-name $STORAGE_ACCOUNT \
+  --query "[0].value" --output tsv)
+
+az storage share create \
+  --name $FILE_SHARE \
+  --account-name $STORAGE_ACCOUNT \
+  --account-key $STORAGE_KEY
+
+echo ""
+echo "Storage Account: $STORAGE_ACCOUNT"
+echo "File Share: $FILE_SHARE"
+echo "Storage Key: $STORAGE_KEY"
+echo ""
+```
+
+```bash
+chmod +x 01_store-account.sh
+./01_store-account.sh > 01_store-account.log
+```
+
+### 17. Script `02_key-vault.sh` — Key Vault
+
+```bash
+#!/bin/bash
+set -e
+
+RESOURCE_GROUP="rg-clyvovet-564662"
+LOCATION="canadacentral"
+KEY_VAULT="kvclyvovet564662"
+
+az keyvault create \
+  --resource-group $RESOURCE_GROUP \
+  --name $KEY_VAULT \
+  --location $LOCATION
+
+az keyvault secret set --vault-name $KEY_VAULT --name "oracle-password" --value "020207"
+az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-name" --value "stclyvovet564662"
+az keyvault secret set --vault-name $KEY_VAULT --name "storage-account-key" --value "$STORAGE_KEY"
+az keyvault secret set --vault-name $KEY_VAULT --name "acr-username" --value "$ADMIN_USERNAME"
+az keyvault secret set --vault-name $KEY_VAULT --name "acr-password" --value "$ADMIN_PASSWORD"
+
+echo ""
+echo "Key Vault: $KEY_VAULT criado e segredos armazenados"
+echo ""
+```
+
+```bash
+chmod +x 02_key-vault.sh
+./02_key-vault.sh > 02_key-vault.log
+```
+
+> Verifique a Conta de Armazenamento e o Key Vault criados no Portal do Azure.
+
+---
 
 ## Parte 5 — Deploy em Azure Container Instances (ACI)
 
-### 23. Deploy do banco Oracle em ACI
+### 18. Script `03_aci-oracledb.sh` — ACI do banco Oracle
 
 ```bash
+#!/bin/bash
+set -e
+
+RESOURCE_GROUP="rg-clyvovet-564662"
+LOGIN_SERVER="clyvovet564662.azurecr.io"
+
 az container create \
-  --resource-group rg-clyvovet-564662 \
-  --name oracle-db-564662 \
-  --image $LOGIN_SERVER/oracle-db-564662:v1 \
+  --resource-group $RESOURCE_GROUP \
+  --name oracledb-564662 \
+  --image $LOGIN_SERVER/oracledb-564662:v1 \
   --registry-login-server $LOGIN_SERVER \
   --registry-username $ADMIN_USERNAME \
   --registry-password $ADMIN_PASSWORD \
   --ports 1521 \
+  --cpu 2 \
+  --memory 4 \
   --environment-variables ORACLE_PASSWORD=020207 \
-  --azure-file-volume-account-name <NOME_DA_STORAGE_ACCOUNT> \
-  --azure-file-volume-account-key <CHAVE_DA_STORAGE_ACCOUNT> \
+  --azure-file-volume-account-name $STORAGE_ACCOUNT \
+  --azure-file-volume-account-key $STORAGE_KEY \
   --azure-file-volume-share-name oracle-data \
   --azure-file-volume-mount-path /opt/oracle/oradata
+
+echo "Aguardando o container do Oracle iniciar..."
+az container logs --resource-group $RESOURCE_GROUP --name oracledb-564662
+
+FQDN_DB=$(az container show --resource-group $RESOURCE_GROUP --name oracledb-564662 \
+  --query ipAddress.ip --output tsv)
+
+echo ""
+echo "IP do oracledb-564662: $FQDN_DB"
+echo ""
+```
+
+```bash
+chmod +x 03_aci-oracledb.sh
+./03_aci-oracledb.sh > 03_aci-oracledb.log
 ```
 
 > O volume `--azure-file-volume-*` persiste os dados do banco em uma Conta de Armazenamento, conforme exigido no checkpoint.
 
-Verificação:
+### 19. Script `04_aci-clyvovetapi.sh` — ACI da API .NET
 
 ```bash
-az container logs --resource-group rg-clyvovet-564662 --name oracle-db-564662
+#!/bin/bash
+set -e
 
-FQDN_DB=$(az container show --resource-group rg-clyvovet-564662 --name oracle-db-564662 \
-  --query ipAddress.fqdn --output tsv)
-```
+RESOURCE_GROUP="rg-clyvovet-564662"
+LOGIN_SERVER="clyvovet564662.azurecr.io"
 
-### 24. Deploy da API .NET em ACI
-
-```bash
 az container create \
-  --resource-group rg-clyvovet-564662 \
-  --name clyvovet-api-564662 \
-  --image $LOGIN_SERVER/clyvovet-api-564662:v1 \
+  --resource-group $RESOURCE_GROUP \
+  --name clyvovetapi-564662 \
+  --image $LOGIN_SERVER/clyvovetapi-564662:v1 \
   --registry-login-server $LOGIN_SERVER \
   --registry-username $ADMIN_USERNAME \
   --registry-password $ADMIN_PASSWORD \
   --ports 8080 \
-  --dns-name-label clyvovet-api-564662 \
-  --environment-variables ASPNETCORE_URLS=http://+:8080
-```
+  --dns-name-label clyvovetapi-564662 \
+  --environment-variables ASPNETCORE_URLS=http://+:8080 \
+  --secure-environment-variables ORACLE_CONNECTION_STRING="Data Source=$FQDN_DB:1521/XEPDB1;User Id=system;Password=020207;"
 
-Verificação:
+echo "Aguardando o container da API iniciar..."
+az container logs --resource-group $RESOURCE_GROUP --name clyvovetapi-564662
 
-```bash
-az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662
-
-FQDN_API=$(az container show --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 \
+FQDN_API=$(az container show --resource-group $RESOURCE_GROUP --name clyvovetapi-564662 \
   --query ipAddress.fqdn --output tsv)
+
+echo ""
+echo "FQDN da clyvovetapi-564662: $FQDN_API"
+echo ""
 
 curl -X GET http://$FQDN_API:8080/api/transacoes
 ```
 
-### 25. Testes de CRUD em nuvem
+```bash
+chmod +x 04_aci-clyvovetapi.sh
+./04_aci-clyvovetapi.sh > 04_aci-clyvovetapi.log
+```
+
+> Verifique os dois ACIs criados no Portal do Azure junto com o Resource Group `rg-clyvovet-564662`.
+
+---
+
+## Parte 6 — Testes de CRUD em nuvem
 
 **POST**
 
@@ -426,26 +425,38 @@ curl -X PUT http://$FQDN_API:8080/api/transacoes/6 \
 curl -X DELETE http://$FQDN_API:8080/api/transacoes/6
 ```
 
-### 26. Comandos úteis de operação/troubleshooting
+### 20. Conferir a persistência direto no Oracle
+
+```bash
+az container exec --resource-group rg-clyvovet-564662 --name oracledb-564662 --exec-command "/bin/bash"
+
+sqlplus system/020207@localhost:1521/XEPDB1
+
+SELECT * FROM transacoes;
+```
+
+---
+
+## Comandos úteis de operação/troubleshooting
 
 ```bash
 # Logs do container
-az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662
+az container logs --resource-group rg-clyvovet-564662 --name clyvovetapi-564662
 
 # Logs com streaming
-az container logs --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --follow
+az container logs --resource-group rg-clyvovet-564662 --name clyvovetapi-564662 --follow
 
 # Sessão interativa
-az container exec --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --exec-command "/bin/bash"
+az container exec --resource-group rg-clyvovet-564662 --name clyvovetapi-564662 --exec-command "/bin/bash"
 
 # Verificar processos
-az container exec --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --exec-command "ps aux"
+az container exec --resource-group rg-clyvovet-564662 --name clyvovetapi-564662 --exec-command "ps aux"
 
 # Deletar um container específico
-az container delete --resource-group rg-clyvovet-564662 --name clyvovet-api-564662 --yes
+az container delete --resource-group rg-clyvovet-564662 --name clyvovetapi-564662 --yes
 ```
 
-### 27. Outros comandos que podem ajudar
+### Outros comandos que podem ajudar
 
 ```bash
 # Informações sobre sua conta
@@ -455,29 +466,21 @@ az account show
 az keyvault list-deleted --subscription {ID_DA_SUBSCRICAO} --resource-type vault -o table
 
 # Purgar (deletar permanentemente) um Key Vault — demora
-az keyvault purge --subscription {ID_DA_SUBSCRICAO} -n {NOME_DO_VAULT}
+az keyvault purge --subscription {ID_DA_SUBSCRICAO} -n kvclyvovet564662
 ```
 
-### 28. (Opcional) Apagar a VM depois de terminar
-
-A VM só serviu como ambiente de build/push — depois que as imagens estão no ACR e os ACIs estão rodando, ela não precisa mais existir (e continua sendo cobrada enquanto ligada):
-
-```powershell
-az vm deallocate --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662
-# ou, para apagar de vez:
-az vm delete --resource-group rg-clyvovet-564662 --name vm-clyvovet-564662 --yes
-```
+---
 
 ## Checklist de entrega
 
-- [ ] Recursos criados via Azure CLI (scripts versionados no GitHub)
-- [ ] `Dockerfile.oracle`, `Dockerfile.api` e demais YAML versionados no GitHub
-- [ ] Container do App **sem** privilégios de root/admin (garantido pelo `USER app` no `Dockerfile.api`)
+- [ ] Recursos criados via Azure CLI (scripts `01_store-account.sh`, `02_key-vault.sh`, `03_aci-oracledb.sh`, `04_aci-clyvovetapi.sh` versionados no GitHub)
+- [ ] `Dockerfile.oracle`, `Dockerfile.api` versionados no GitHub
+- [ ] Container do App (`clyvovetapi-564662`) **sem** privilégios de root/admin (garantido pelo `USER app` no `Dockerfile.api`)
 - [ ] Comandos completos de `docker build` e `docker push` documentados
-- [ ] Banco de dados relacional containerizado com Dockerfile próprio (H2 **não** é aceito)
-- [ ] Dados do banco persistidos em Conta de Armazenamento
+- [ ] Banco de dados relacional (Oracle) containerizado com Dockerfile próprio (H2 **não** é aceito)
+- [ ] Dados do banco persistidos em Conta de Armazenamento (`stclyvovet564662`)
 - [ ] Script DDL das tabelas versionado no GitHub (pode ficar em `init-scripts/` do `Dockerfile.oracle`)
 - [ ] Arquivos JSON de teste (GET/POST/PUT/DELETE) versionados no GitHub
-- [ ] Vídeo (mín. 720p, com áudio explicativo) mostrando: recursos criados na Azure (ACR, ACI, Conta de Armazenamento) e evidências de cada operação de CRUD via SELECT no banco
-- [ ] Nenhuma credencial sensível exposta no código-fonte
+- [ ] Vídeo (mín. 720p, com áudio explicativo) mostrando: recursos criados na Azure (ACR, ACI, Storage Account, Key Vault) e evidências de cada operação de CRUD via SELECT no banco
+- [ ] Nenhuma credencial sensível exposta no código-fonte (uso do Key Vault)
 - [ ] Folha de rosto com nome do grupo, RM e integrantes, link do GitHub e do vídeo
