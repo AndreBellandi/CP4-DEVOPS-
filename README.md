@@ -119,7 +119,6 @@ docker network create clyvovet-net
 ### 5. Build das imagens localmente
 
 ```bash
-cd .\ClyvoVetApi-main\
 docker build -f Dockerfile.oracle -t oracledb-564662 .
 docker build -f Dockerfile.api -t clyvovetapi-564662 .
 ```
@@ -133,33 +132,64 @@ docker build -f Dockerfile.api -t clyvovetapi-564662 .
 ```bash
 az provider register --namespace Microsoft.ContainerRegistry
 
-az acr create \
-    --resource-group rg-clyvovet-564662 \
-    --name clyvovet564662 \
-    --sku Standard \
-    --location canadacentral \
-    --public-network-enabled true \
-    --admin-enabled true
+az acr create --resource-group rg-clyvovet-564662 --name clyvovet564662 --sku Standard --location canadacentral --public-network-enabled true --admin-enabled true
 ```
 
-### 11. Obter credenciais do ACR
+## Configuração do Azure Container Registry (ACR)
 
-```bash
-LOGIN_SERVER=$(az acr show --name clyvovet564662 \
-                           --resource-group rg-clyvovet-564662 \
-                           --query loginServer --output tsv)
-echo ""
+### 1. Criar o Azure Container Registry
+
+Execute o comando abaixo em uma única linha:
+
+```powershell
+az acr create --resource-group rg-clyvovet-564662 --name clyvovet564662 --sku Standard --location canadacentral --public-network-enabled true --admin-enabled true
+```
+
+### 2. Obter o Login Server
+
+No PowerShell, utilize:
+
+```powershell
+$LOGIN_SERVER = az acr show --name clyvovet564662 --resource-group rg-clyvovet-564662 --query loginServer --output tsv
+```
+
+Para verificar:
+
+```powershell
 echo "Login Server: $LOGIN_SERVER"
-echo ""
-
-ADMIN_USERNAME=$(az acr credential show --name clyvovet564662 \
-                                        --resource-group rg-clyvovet-564662 \
-                                        --query username --output tsv) && \
-ADMIN_PASSWORD=$(az acr credential show --name clyvovet564662 \
-                                        --resource-group rg-clyvovet-564662 \
-                                 --query passwords[0].value --output tsv) && \
-echo "Username: $ADMIN_USERNAME" && echo "Password: $ADMIN_PASSWORD"
 ```
+
+Resultado esperado:
+
+```text
+Login Server: clyvovet564662.azurecr.io
+```
+
+### 3. Obter o usuário administrador
+
+```powershell
+$ADMIN_USERNAME = az acr credential show --name clyvovet564662 --resource-group rg-clyvovet-564662 --query username --output tsv
+```
+
+Para verificar:
+
+```powershell
+echo "Username: $ADMIN_USERNAME"
+```
+
+### 4. Obter a senha do ACR
+
+```powershell
+$ADMIN_PASSWORD = az acr credential show --name clyvovet564662 --resource-group rg-clyvovet-564662 --query "passwords[0].value" --output tsv
+```
+
+Para verificar se a senha foi carregada:
+
+```powershell
+echo "Password configurada: $($ADMIN_PASSWORD.Length -gt 0)"
+```
+
+> **Observação:** Os comandos acima estão no formato **PowerShell**. A sintaxe `LOGIN_SERVER=$(...)`, `\` para quebra de linha e `&&` é utilizada em Bash/Linux e não deve ser usada diretamente no PowerShell.
 
 ### 12. Login no ACR
 
